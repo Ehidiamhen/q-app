@@ -33,14 +33,15 @@
 
 ## Executive Summary
 
-This document analyzes authentication approaches for QApp, balancing the requirement for **frictionless, anonymous-feeling access** with **security and accountability**. After evaluating multiple approaches:
+This document analyzes authentication approaches for QApp, balancing the requirement for **frictionless browsing** with **accountability for contributions**. After evaluating multiple approaches:
 
 **Selected Approach:**
-- **MVP Authentication**: Anonymous device tokens with optional account upgrade
-- **Auth Provider**: Supabase Auth (integrated with database, generous free tier)
-- **Upgrade Path**: Optional magic link email authentication for cross-device sync
+- **Anonymous Access**: Read-only (browse and search) - no authentication required
+- **Google OAuth**: Required for uploads and future features (likes, saves, comments)
+- **Auth Provider**: Supabase Auth with Google OAuth (integrated with database, generous free tier)
+- **User Profiles**: Automatic creation on first Google login with editable display names
 
-**Key Rationale**: Maximum friction reduction for first use, with progressive account creation for users who want to track their contributions or sync across devices.
+**Key Rationale**: Zero friction for discovery (anonymous browsing), with streamlined Google OAuth for any contributions. This creates accountability for uploaded content while keeping the entry barrier low for casual users.
 
 ---
 
@@ -50,20 +51,22 @@ This document analyzes authentication approaches for QApp, balancing the require
 
 | Requirement | Priority | Notes |
 |-------------|----------|-------|
-| Zero-friction first use | 🔴 Critical | No signup wall before browsing/uploading |
-| Cross-device sync | 🟡 Nice-to-have | Not required for MVP |
-| Contribution tracking | 🟡 Nice-to-have | "Your uploads" feature |
-| Abuse prevention | 🔴 Critical | Prevent spam/inappropriate content |
-| Account recovery | 🟢 Low | Not critical if anonymous |
+| Zero-friction browsing | 🔴 Critical | No signup wall for viewing content |
+| Simple auth for uploads | 🔴 Critical | Google OAuth - one click |
+| Contribution tracking | 🔴 Critical | Users see their uploads on profile |
+| User attribution | 🔴 Critical | Show uploader on question cards |
+| Abuse prevention | 🔴 Critical | Authentic accounts for accountability |
+| Account recovery | 🔴 Critical | Google handles recovery |
 
 ### Security Requirements
 
 | Requirement | Priority | Notes |
 |-------------|----------|-------|
-| Prevent spam uploads | 🔴 Critical | Rate limiting, basic verification |
-| Content accountability | 🟡 Medium | Ability to ban bad actors |
-| Data protection | 🔴 Critical | Secure token storage |
-| API protection | 🔴 Critical | Prevent unauthorized access |
+| Prevent spam uploads | 🔴 Critical | Google OAuth + rate limiting |
+| Content accountability | 🔴 Critical | Real Google accounts for uploads |
+| Data protection | 🔴 Critical | Supabase Auth handles tokens securely |
+| API protection | 🔴 Critical | Authenticated endpoints for writes |
+| User privacy | 🔴 Critical | Email not publicly visible |
 
 ### The Friction-Security Tradeoff
 
@@ -83,127 +86,95 @@ High Friction                                              Low Friction
                                                       Friction
 ```
 
-**Target for QApp**: Right side (anonymous) with optional move left (account linking).
+**Target for QApp**: 
+- **Browse/Search**: Rightmost (zero friction, anonymous)
+- **Upload/Contribute**: Middle-left (Google OAuth, low friction, secure)
 
 ---
 
 ## Authentication Approaches
 
-### Approach 1: Anonymous Device Tokens
+### Approach 1: Anonymous Read-Only Access
 
 #### How It Works
 
 ```
-First Visit:
-┌──────────┐     1. No token found     ┌──────────┐
-│  Client  │ ────────────────────────► │  Server  │
-│ (Browser)│                           │          │
-└──────────┘                           └────┬─────┘
-     │                                      │
-     │                               2. Generate anonymous user
-     │                                  + device token (JWT)
-     │                                      │
-     │       3. Return token               │
-     │ ◄────────────────────────────────────┘
-     │
-     │       4. Store in localStorage
-     ▼
-┌──────────────────────┐
-│ localStorage:        │
-│ qapp_device_token=   │
-│ eyJhbGciOiJIUzI1...  │
-└──────────────────────┘
+Any Visit:
+┌──────────┐    Browse/Search Requests    ┌──────────┐
+│  Client  │ ──────────────────────────► │  Server  │
+│ (Browser)│                              │          │
+└──────────┘                              └──────────┘
+     │                                         │
+     │    Returns public data (no auth)        │
+     │ ◄───────────────────────────────────────┘
+     
+No Authentication Required:
+- ✅ Browse question feed
+- ✅ Search questions
+- ✅ View question details
+- ✅ View user profiles (public)
 
-Subsequent Visits:
-- Token found in localStorage
-- Included in API requests
-- Server validates and identifies user
+Authentication Required (triggers Google OAuth):
+- ❌ Upload questions
+- ❌ Like posts (future)
+- ❌ Save/bookmark (future)
+- ❌ Comment (future)
 ```
 
 #### Implementation
 
 ```typescript
-// lib/auth/device-token.ts
-import { SignJWT, jwtVerify } from 'jose';
-import { nanoid } from 'nanoid';
-
-const secret = new TextEncoder().encode(process.env.JWT_SECRET);
-
-export async function createDeviceToken(deviceId: string) {
-  const token = await new SignJWT({ deviceId })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setExpirationTime('365d')  // Long-lived for anonymous users
-    .sign(secret);
+// API route protection - public routes
+export async function GET(request: Request) {
+  // No auth check - public data
+  const questions = await db.select()
+    .from(questions)
+    .orderBy(desc(questions.createdAt))
+    .limit(20);
   
-  return token;
-}
-
-export async function verifyDeviceToken(token: string) {
-  try {
-    const { payload } = await jwtVerify(token, secret);
-    return payload as { deviceId: string };
-  } catch {
-    return null;
-  }
-}
-
-// Client-side initialization
-export function getOrCreateDeviceId(): string {
-  if (typeof window === 'undefined') return '';
-  
-  let deviceId = localStorage.getItem('qapp_device_id');
-  if (!deviceId) {
-    deviceId = nanoid();
-    localStorage.setItem('qapp_device_id', deviceId);
-  }
-  return deviceId;
+  return Response.json({ questions });
 }
 ```
 
 ```typescript
-// API middleware
-export async function withAuth(request: Request) {
-  const token = request.headers.get('Authorization')?.replace('Bearer ', '');
+// API route protection - authenticated routes
+export async function POST(request: Request) {
+  // Get user from Supabase session
+  const supabase = createRouteHandlerClient({ cookies });
+  const { data: { session } } = await supabase.auth.getSession();
   
-  if (!token) {
-    // Create new anonymous user
-    const deviceId = nanoid();
-    const user = await db.insert(users).values({ deviceId }).returning();
-    const newToken = await createDeviceToken(deviceId);
-    return { user: user[0], token: newToken, isNew: true };
+  if (!session) {
+    return Response.json(
+      { error: 'Authentication required' },
+      { status: 401 }
+    );
   }
   
-  const payload = await verifyDeviceToken(token);
-  if (!payload) {
-    throw new Error('Invalid token');
-  }
-  
-  const user = await db.select().from(users).where(eq(users.deviceId, payload.deviceId));
-  return { user: user[0], token, isNew: false };
+  // User is authenticated, proceed with upload
+  const userId = session.user.id;
+  // ... upload logic
 }
 ```
 
 #### Pros
 
-- ✅ **Zero friction**: No signup, no login, instant access
-- ✅ **Simple implementation**: Just JWT + localStorage
-- ✅ **Privacy-friendly**: No email/phone required
-- ✅ **Works offline**: Token stored locally
-- ✅ **Fast**: No external auth service calls
+- ✅ **Zero friction for discovery**: Instant access to content
+- ✅ **Simple implementation**: No anonymous token management
+- ✅ **Clear boundaries**: Auth required only for contributions
+- ✅ **SEO-friendly**: Public content indexable
+- ✅ **Lower server costs**: No anonymous user records
 
 #### Cons
 
-- ❌ **No account recovery**: Clear localStorage = lose identity
-- ❌ **No cross-device sync**: Each device is separate user
-- ❌ **Easier to abuse**: Can clear storage to bypass bans
-- ❌ **No email for notifications**: Can't contact users
+- ❌ **Can't track anonymous users**: No analytics on browsers
+- ❌ **No personalization**: Can't save preferences without login
+- ❌ **Conversion required**: Must sign in to contribute
 
 #### Best For
 
-- ✅ MVP where friction reduction is priority
-- ✅ Apps where identity persistence is nice-to-have
-- ✅ Privacy-focused applications
+- ✅ **Content discovery platforms** (like QApp)
+- ✅ **Public-first applications**
+- ✅ **Social accountability desired**
 
 ---
 
@@ -343,97 +314,173 @@ const { data, error } = await supabase.auth.verifyOtp({
 
 ---
 
-### Approach 5: Hybrid Anonymous + Optional Account
+### Approach 5: Google OAuth for Contributions (SELECTED)
 
 #### How It Works
 
 ```
-First Visit:
-┌──────────────────────────────────────────┐
-│ Anonymous device token created           │
-│ User can browse, upload, search          │
-│ All actions tied to device ID            │
-└──────────────────────────────────────────┘
+Browse/Search (No Auth):
+┌──────────┐    Public API Requests    ┌──────────┐
+│  Client  │ ──────────────────────────►│  Server  │
+│ (Browser)│◄──────────────────────────│          │
+└──────────┘    Returns public data     └──────────┘
 
-Later (Optional):
-┌──────────────────────────────────────────┐
-│ "Want to save your contributions?"       │
-│ [Link Email] [Sign in with Google]       │
-│                                          │
-│ Device token linked to real account      │
-│ Cross-device sync enabled                │
-│ Account recovery available               │
-└──────────────────────────────────────────┘
+Upload/Contribute (Auth Required):
+┌──────────┐  1. Click "Upload"         ┌──────────┐
+│  Client  │ ──────────────────────────►│  Server  │
+│          │                             │          │
+│          │  2. Redirect to Google      │          │
+│          │◄────────────────────────────│          │
+└──────────┘                             └──────────┘
+     │
+     ▼
+┌──────────────────────┐
+│   Google OAuth       │
+│   User authorizes    │
+└──────────┬───────────┘
+           │
+           ▼
+┌──────────┐  3. Callback with token   ┌──────────┐
+│  Client  │────────────────────────────►│  Server  │
+│          │                             │          │
+│          │  4. Create/Get user profile │          │
+│          │     - Save email, name      │          │
+│          │     - Save avatar URL       │          │
+│          │     - Create session        │          │
+│          │◄────────────────────────────│          │
+│          │  5. Return to upload page   │          │
+└──────────┘                             └──────────┘
 ```
 
 #### Implementation
 
 ```typescript
-// Database schema supports both anonymous and linked accounts
-export const users = pgTable('users', {
-  id: text('id').primaryKey(),
-  deviceId: text('device_id').unique(),  // Anonymous identifier
-  email: text('email').unique(),          // Optional: linked email
-  provider: text('provider'),              // Optional: 'google', 'email', null
-  displayName: text('display_name'),       // Optional
-  isAnonymous: boolean('is_anonymous').default(true),
-  createdAt: timestamp('created_at').defaultNow(),
-});
+// Supabase Auth with Google OAuth
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
-// Link anonymous account to email
-export async function linkAccount(deviceId: string, email: string) {
-  // Check if email already exists
-  const existing = await db.select().from(users).where(eq(users.email, email));
+// Client-side: Trigger Google OAuth
+export async function signInWithGoogle() {
+  const supabase = createClientComponentClient();
   
-  if (existing.length > 0) {
-    // Merge: Transfer anonymous user's content to existing account
-    await db.update(questions)
-      .set({ authorId: existing[0].id })
-      .where(eq(questions.authorId, deviceId));
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: `${window.location.origin}/auth/callback`,
+      queryParams: {
+        access_type: 'offline',
+        prompt: 'consent',
+      },
+    },
+  });
+  
+  if (error) throw error;
+}
+
+// Server-side: Handle callback and create user profile
+export async function GET(request: Request) {
+  const requestUrl = new URL(request.url);
+  const code = requestUrl.searchParams.get('code');
+  
+  if (code) {
+    const supabase = createRouteHandlerClient({ cookies });
+    await supabase.auth.exchangeCodeForSession(code);
     
-    // Delete anonymous user
-    await db.delete(users).where(eq(users.deviceId, deviceId));
+    // Get user data from Google
+    const { data: { session } } = await supabase.auth.getSession();
     
-    return existing[0];
-  } else {
-    // Upgrade: Add email to anonymous account
-    const updated = await db.update(users)
-      .set({ email, isAnonymous: false })
-      .where(eq(users.deviceId, deviceId))
-      .returning();
-    
-    return updated[0];
+    if (session) {
+      // Create or update user profile
+      const { user } = session;
+      
+      await db.insert(users).values({
+        id: user.id,
+        email: user.email!,
+        displayName: user.user_metadata.full_name || user.email!.split('@')[0],
+        avatarUrl: user.user_metadata.avatar_url,
+        provider: 'google',
+      }).onConflictDoUpdate({
+        target: users.id,
+        set: {
+          email: user.email!,
+          avatarUrl: user.user_metadata.avatar_url,
+        },
+      });
+    }
   }
+  
+  return NextResponse.redirect(new URL('/upload', request.url));
+}
+```
+
+```typescript
+// Protected API route example
+export async function POST(request: Request) {
+  const supabase = createRouteHandlerClient({ cookies });
+  const { data: { session } } = await supabase.auth.getSession();
+  
+  if (!session) {
+    return Response.json(
+      { error: 'Sign in with Google to upload' },
+      { status: 401 }
+    );
+  }
+  
+  // User is authenticated
+  const userId = session.user.id;
+  const body = await request.json();
+  
+  const question = await db.insert(questions).values({
+    ...body,
+    authorId: userId,
+  }).returning();
+  
+  return Response.json({ question });
 }
 ```
 
 #### Pros
 
-- ✅ **Best of both worlds**: Zero friction start, optional upgrade
-- ✅ **Progressive trust**: Users prove identity when they want to
-- ✅ **No lost data**: Anonymous contributions preserved after linking
-- ✅ **Flexible**: Users choose their comfort level
-- ✅ **Incentivized upgrade**: "Save your uploads" motivation
+- ✅ **Simple auth flow**: One-click Google signin
+- ✅ **Accountability**: Real Google accounts for uploads
+- ✅ **User attribution**: Show uploader names on posts
+- ✅ **Profile data**: Email, name, avatar from Google
+- ✅ **Account recovery**: Google handles it
+- ✅ **Cross-device**: Works anywhere user signs in
+- ✅ **Spam prevention**: Harder to create fake accounts
+- ✅ **Free tier generous**: Supabase 50k MAU
 
 #### Cons
 
-- ❌ **Implementation complexity**: Two auth flows to maintain
-- ❌ **Account merge logic**: Handling edge cases
-- ❌ **UX design needed**: When/how to prompt for upgrade
+- ❌ **Google dependency**: If Google OAuth is down, can't upload
+- ❌ **Friction for contributions**: Must sign in to upload
+- ❌ **Email required**: Google accounts have email (acceptable)
+- ❌ **Not truly anonymous**: But that's the goal (accountability)
+
+#### Best For
+
+- ✅ **Social platforms** where attribution matters
+- ✅ **User-generated content** requiring accountability
+- ✅ **Apps prioritizing quality** over quantity
 
 ---
 
 ### Authentication Approach Comparison
 
-| Approach | Friction | Security | Cross-Device | Recovery | Cost |
-|----------|----------|----------|--------------|----------|------|
-| Anonymous Token | ⭐⭐⭐⭐⭐ None | ⭐⭐ Basic | ❌ No | ❌ No | Free |
-| Magic Link | ⭐⭐⭐ Medium | ⭐⭐⭐⭐ Good | ✅ Yes | ✅ Yes | ~$0.001/email |
-| OAuth Social | ⭐⭐⭐⭐ Low | ⭐⭐⭐⭐⭐ Best | ✅ Yes | ✅ Yes | Free |
-| Phone OTP | ⭐⭐⭐ Medium | ⭐⭐⭐⭐ Good | ✅ Yes | ✅ Yes | ~$0.01/SMS |
-| **Hybrid** | ⭐⭐⭐⭐⭐ None | ⭐⭐⭐⭐ Good | Optional | Optional | Varies |
+| Approach | Browse Friction | Upload Friction | Security | Accountability | Cost |
+|----------|-----------------|-----------------|----------|----------------|------|
+| Anonymous Token | ⭐⭐⭐⭐⭐ None | ⭐⭐⭐⭐⭐ None | ⭐⭐ Basic | ❌ Low | Free |
+| Magic Link | ⭐⭐⭐⭐⭐ None | ⭐⭐⭐ Medium | ⭐⭐⭐⭐ Good | ✅ Medium | ~$0.001/email |
+| **Google OAuth (Selected)** | ⭐⭐⭐⭐⭐ None | ⭐⭐⭐⭐ Low | ⭐⭐⭐⭐⭐ Best | ✅ High | Free |
+| Phone OTP | ⭐⭐⭐⭐⭐ None | ⭐⭐⭐ Medium | ⭐⭐⭐⭐ Good | ✅ High | ~$0.01/SMS |
 
-**Recommendation for QApp MVP**: **Approach 5 - Hybrid Anonymous + Optional Account**
+**Recommendation for QApp MVP**: **Google OAuth for Contributions (Approach 5)**
+
+**Why This Wins:**
+- Zero friction for discovery (anonymous browse/search)
+- Low friction for contributions (one-click Google signin)
+- High accountability (real Google accounts)
+- User attribution for social features (show uploader on posts)
+- Foundation for future social features (likes, follows, comments)
 
 ---
 
@@ -583,29 +630,47 @@ Given we're using Supabase for database, **Supabase Auth** provides the simplest
 
 ### User Roles (MVP)
 
-For MVP, we keep authorization simple:
+For MVP, we have two clear authorization levels:
 
 ```typescript
-// Only two states that matter
-interface AuthContext {
-  user: {
-    id: string;
-    isAnonymous: boolean;
-    deviceId: string;
-    email?: string;
-  } | null;
+// Anonymous (not signed in)
+interface AnonymousUser {
+  authenticated: false;
 }
 
-// Permissions
+// Authenticated (signed in with Google)
+interface AuthenticatedUser {
+  authenticated: true;
+  user: {
+    id: string;
+    email: string;
+    displayName: string;
+    avatarUrl: string | null;
+  };
+}
+
+// Permissions Matrix
 const permissions = {
-  browse: true,           // Everyone can browse
-  search: true,           // Everyone can search
-  view: true,             // Everyone can view questions
-  upload: true,           // Everyone can upload (with rate limits)
-  editOwn: true,          // Users can edit their own uploads
-  deleteOwn: true,        // Users can delete their own uploads
-  deleteAny: false,       // Admin only (future)
-  ban: false,             // Admin only (future)
+  // Public (no auth required)
+  browse: { anonymous: true, authenticated: true },
+  search: { anonymous: true, authenticated: true },
+  viewQuestions: { anonymous: true, authenticated: true },
+  viewProfiles: { anonymous: true, authenticated: true },
+  
+  // Authenticated only
+  upload: { anonymous: false, authenticated: true },
+  editOwnQuestions: { anonymous: false, authenticated: true },
+  deleteOwnQuestions: { anonymous: false, authenticated: true },
+  updateOwnProfile: { anonymous: false, authenticated: true },
+  
+  // Future (V2) - authenticated only
+  likeQuestions: { anonymous: false, authenticated: true },
+  saveBookmarks: { anonymous: false, authenticated: true },
+  comment: { anonymous: false, authenticated: true },
+  
+  // Admin only (future)
+  deleteAnyQuestion: { anonymous: false, authenticated: 'admin' },
+  banUsers: { anonymous: false, authenticated: 'admin' },
 };
 ```
 
@@ -644,13 +709,14 @@ async function checkUploadLimit(userId: string) {
 ### Row Level Security (Supabase)
 
 ```sql
--- Users can read all questions
+-- Questions table policies
+-- Anyone can read questions (including anonymous)
 CREATE POLICY "Questions are viewable by everyone" ON questions
   FOR SELECT USING (true);
 
--- Users can only insert their own questions
-CREATE POLICY "Users can insert own questions" ON questions
-  FOR INSERT WITH CHECK (auth.uid() = author_id);
+-- Only authenticated users can insert questions
+CREATE POLICY "Authenticated users can insert questions" ON questions
+  FOR INSERT WITH CHECK (auth.uid() IS NOT NULL AND auth.uid() = author_id);
 
 -- Users can only update their own questions
 CREATE POLICY "Users can update own questions" ON questions
@@ -659,6 +725,15 @@ CREATE POLICY "Users can update own questions" ON questions
 -- Users can only delete their own questions
 CREATE POLICY "Users can delete own questions" ON questions
   FOR DELETE USING (auth.uid() = author_id);
+
+-- Users table policies
+-- User profiles are publicly readable
+CREATE POLICY "Profiles are viewable by everyone" ON users
+  FOR SELECT USING (true);
+
+-- Users can only update their own profile
+CREATE POLICY "Users can update own profile" ON users
+  FOR UPDATE USING (auth.uid() = id);
 ```
 
 ---
@@ -729,118 +804,161 @@ export const reports = pgTable('reports', {
 
 ## Implementation Details
 
-### Recommended Implementation: Supabase Auth with Anonymous Fallback
+### Recommended Implementation: Supabase Auth with Google OAuth
 
 ```typescript
 // lib/auth/index.ts
-import { createClient } from '@supabase/supabase-js';
-import { nanoid } from 'nanoid';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+const supabase = createClientComponentClient();
 
-// Get or create user identity
-export async function getOrCreateUser() {
-  // Check for Supabase session first
+// Client-side: Check if user is authenticated
+export async function getSession() {
   const { data: { session } } = await supabase.auth.getSession();
   
-  if (session) {
-    return {
-      id: session.user.id,
-      email: session.user.email,
-      isAnonymous: false,
-      provider: session.user.app_metadata.provider,
-    };
+  if (!session) {
+    return null;
   }
   
-  // Fall back to anonymous device token
-  let deviceId = localStorage.getItem('qapp_device_id');
-  
-  if (!deviceId) {
-    deviceId = nanoid();
-    localStorage.setItem('qapp_device_id', deviceId);
-    
-    // Create anonymous user in database
-    await supabase.from('users').insert({
-      id: deviceId,
-      device_id: deviceId,
-      is_anonymous: true,
-    });
-  }
+  // Fetch user profile from database
+  const { data: profile } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', session.user.id)
+    .single();
   
   return {
-    id: deviceId,
-    isAnonymous: true,
-    deviceId,
+    id: session.user.id,
+    email: session.user.email!,
+    displayName: profile?.display_name || session.user.user_metadata.full_name,
+    avatarUrl: profile?.avatar_url || session.user.user_metadata.avatar_url,
   };
 }
 
-// Optional: Link anonymous account to email
-export async function linkWithEmail(email: string) {
-  const user = await getOrCreateUser();
-  
-  if (!user.isAnonymous) {
-    throw new Error('Already linked to an account');
-  }
-  
-  // Send magic link
-  const { error } = await supabase.auth.signInWithOtp({
-    email,
+// Client-side: Sign in with Google
+export async function signInWithGoogle() {
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
     options: {
-      data: { deviceId: user.deviceId },  // Pass device ID to merge
+      redirectTo: `${window.location.origin}/auth/callback`,
+      queryParams: {
+        access_type: 'offline',
+        prompt: 'consent',
+      },
     },
   });
   
   if (error) throw error;
-  
-  return { message: 'Check your email for login link' };
 }
 
-// Handle auth callback (after magic link click)
-export async function handleAuthCallback() {
-  const { data: { session }, error } = await supabase.auth.getSession();
+// Client-side: Sign out
+export async function signOut() {
+  const { error } = await supabase.auth.signOut();
+  if (error) throw error;
+}
+
+// Client-side: Update display name
+export async function updateDisplayName(displayName: string) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Not authenticated');
   
-  if (error || !session) throw new Error('Auth failed');
+  const { error } = await supabase
+    .from('users')
+    .update({ display_name: displayName })
+    .eq('id', session.user.id);
   
-  const deviceId = session.user.user_metadata.deviceId;
-  
-  if (deviceId) {
-    // Merge anonymous account with new auth account
-    await supabase.rpc('merge_anonymous_account', {
-      anonymous_id: deviceId,
-      auth_id: session.user.id,
-    });
-  }
-  
-  return session;
+  if (error) throw error;
 }
 ```
 
-### Database Function for Account Merging
+### Auth Callback Handler
 
-```sql
--- Supabase SQL function to merge anonymous account
-CREATE OR REPLACE FUNCTION merge_anonymous_account(
-  anonymous_id TEXT,
-  auth_id UUID
-) RETURNS void AS $$
-BEGIN
-  -- Transfer questions from anonymous to authenticated user
-  UPDATE questions
-  SET author_id = auth_id::TEXT
-  WHERE author_id = anonymous_id;
+```typescript
+// app/auth/callback/route.ts
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
+import { NextResponse } from 'next/server';
+import { db } from '@/lib/db';
+import { users } from '@/lib/db/schema';
+
+export async function GET(request: Request) {
+  const requestUrl = new URL(request.url);
+  const code = requestUrl.searchParams.get('code');
   
-  -- Delete anonymous user record
-  DELETE FROM users WHERE device_id = anonymous_id;
+  if (code) {
+    const supabase = createRouteHandlerClient({ cookies });
+    await supabase.auth.exchangeCodeForSession(code);
+    
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (session) {
+      const { user } = session;
+      
+      // Create or update user profile in database
+      await db.insert(users).values({
+        id: user.id,
+        email: user.email!,
+        displayName: user.user_metadata.full_name || user.email!.split('@')[0],
+        avatarUrl: user.user_metadata.avatar_url || null,
+        provider: 'google',
+      }).onConflictDoUpdate({
+        target: users.id,
+        set: {
+          email: user.email!,
+          // Update avatar URL in case it changed
+          avatarUrl: user.user_metadata.avatar_url || null,
+        },
+      });
+    }
+  }
   
-  -- Update authenticated user to remove anonymous flag
-  UPDATE users
-  SET is_anonymous = false
-  WHERE id = auth_id::TEXT;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+  // Redirect to upload page or wherever user was going
+  return NextResponse.redirect(new URL('/', request.url));
+}
+```
+
+### Protected API Route Middleware
+
+```typescript
+// lib/auth/middleware.ts
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
+
+export async function requireAuth() {
+  const supabase = createRouteHandlerClient({ cookies });
+  const { data: { session } } = await supabase.auth.getSession();
+  
+  if (!session) {
+    throw new Error('Authentication required');
+  }
+  
+  return {
+    userId: session.user.id,
+    email: session.user.email!,
+  };
+}
+
+// Usage in API routes
+export async function POST(request: Request) {
+  try {
+    const { userId } = await requireAuth();
+    
+    // User is authenticated, proceed
+    const body = await request.json();
+    const question = await db.insert(questions).values({
+      ...body,
+      authorId: userId,
+    }).returning();
+    
+    return Response.json({ question });
+  } catch (error) {
+    return Response.json(
+      { error: 'Please sign in to upload' },
+      { status: 401 }
+    );
+  }
+}
 ```
 
 ### Auth Context Provider
@@ -850,13 +968,15 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 'use client';
 
 import { createContext, useContext, useEffect, useState } from 'react';
-import { getOrCreateUser, type User } from '@/lib/auth';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import type { User } from '@/lib/types';
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  linkWithEmail: (email: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
+  updateDisplayName: (name: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -864,23 +984,83 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const supabase = createClientComponentClient();
   
   useEffect(() => {
-    async function init() {
-      try {
-        const user = await getOrCreateUser();
-        setUser(user);
-      } catch (error) {
-        console.error('Auth init failed:', error);
-      } finally {
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        loadUserProfile(session.user.id);
+      } else {
         setIsLoading(false);
       }
-    }
-    init();
+    });
+    
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (session) {
+          await loadUserProfile(session.user.id);
+        } else {
+          setUser(null);
+        }
+      }
+    );
+    
+    return () => subscription.unsubscribe();
   }, []);
   
+  async function loadUserProfile(userId: string) {
+    const { data } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', userId)
+      .single();
+    
+    if (data) {
+      setUser({
+        id: data.id,
+        email: data.email,
+        displayName: data.display_name,
+        avatarUrl: data.avatar_url,
+      });
+    }
+    setIsLoading(false);
+  }
+  
+  async function signInWithGoogle() {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+      },
+    });
+  }
+  
+  async function signOut() {
+    await supabase.auth.signOut();
+    setUser(null);
+  }
+  
+  async function updateDisplayName(displayName: string) {
+    if (!user) throw new Error('Not authenticated');
+    
+    await supabase
+      .from('users')
+      .update({ display_name: displayName })
+      .eq('id', user.id);
+    
+    setUser({ ...user, displayName });
+  }
+  
   return (
-    <AuthContext.Provider value={{ user, isLoading, linkWithEmail, signOut }}>
+    <AuthContext.Provider value={{
+      user,
+      isLoading,
+      signInWithGoogle,
+      signOut,
+      updateDisplayName,
+    }}>
       {children}
     </AuthContext.Provider>
   );
@@ -896,23 +1076,60 @@ export function useAuth() {
 ### Usage in Components
 
 ```typescript
-// Example: Upload page
+// Example: Upload page - check authentication
+'use client';
+
 export function UploadPage() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, signInWithGoogle } = useAuth();
   
   if (isLoading) return <Spinner />;
   
+  // User not authenticated - show sign in prompt
+  if (!user) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh]">
+        <h2 className="text-2xl font-bold mb-4">Sign in to Upload</h2>
+        <p className="text-muted-foreground mb-6">
+          Sign in with Google to share question papers
+        </p>
+        <Button onClick={signInWithGoogle}>
+          <GoogleIcon className="mr-2" />
+          Sign in with Google
+        </Button>
+      </div>
+    );
+  }
+  
+  // User authenticated - show upload form
   return (
     <div>
-      <UploadForm userId={user!.id} />
-      
-      {user?.isAnonymous && (
-        <Card className="mt-4">
-          <p>Want to save your uploads across devices?</p>
-          <LinkAccountButton />
-        </Card>
-      )}
+      <h1>Upload Question Paper</h1>
+      <UploadForm userId={user.id} />
     </div>
+  );
+}
+```
+
+```typescript
+// Example: Show upload button with auth check
+export function UploadButton() {
+  const { user, signInWithGoogle } = useAuth();
+  const router = useRouter();
+  
+  function handleClick() {
+    if (!user) {
+      // Not signed in - trigger Google OAuth
+      signInWithGoogle();
+    } else {
+      // Signed in - go to upload page
+      router.push('/upload');
+    }
+  }
+  
+  return (
+    <Button onClick={handleClick}>
+      {user ? 'Upload Question Paper' : 'Sign in to Upload'}
+    </Button>
   );
 }
 ```
@@ -925,49 +1142,77 @@ export function UploadPage() {
 
 | Component | Choice | Rationale |
 |-----------|--------|-----------|
-| **Primary Auth** | Anonymous device tokens | Zero friction, privacy-friendly |
-| **Optional Upgrade** | Supabase Auth (magic link) | Cross-device sync when needed |
-| **Auth Provider** | Supabase Auth | Integrated with database |
-| **Rate Limiting** | Upstash Redis | Prevent abuse |
-| **Session Storage** | localStorage (anonymous) / httpOnly cookie (linked) | Security appropriate to risk |
+| **Browse/Search** | No authentication | Zero friction for discovery |
+| **Upload/Contribute** | Google OAuth (required) | Accountability + user attribution |
+| **Auth Provider** | Supabase Auth | Integrated with database, generous free tier |
+| **User Profiles** | Automatic creation | Display name editable, avatar from Google |
+| **Rate Limiting** | Upstash Redis | Additional spam prevention |
+| **Session Storage** | httpOnly cookies (Supabase) | Secure, cross-domain compatible |
 
 ### User Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         FIRST VISIT                              │
+│                    BROWSE (NO AUTH REQUIRED)                     │
 │                                                                  │
 │  1. User lands on QApp                                          │
-│  2. Device ID generated automatically                            │
-│  3. Anonymous user created in database                           │
-│  4. User can immediately browse, search, upload                  │
+│  2. Immediately browse question feed                             │
+│  3. Search for specific courses                                  │
+│  4. View question details                                        │
+│  5. View uploader profiles                                       │
 │                                                                  │
-│  NO SIGNUP WALL! 🎉                                              │
+│  NO SIGNUP WALL FOR VIEWING! 🎉                                  │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                      LATER (OPTIONAL)                            │
+│                  UPLOAD (AUTH REQUIRED)                          │
 │                                                                  │
-│  User sees prompt: "Save your uploads across devices?"           │
+│  User clicks "Upload Question Paper"                             │
 │                                                                  │
-│  [Link with Email]  [Sign in with Google]  [Maybe Later]        │
+│  Not signed in? Show modal:                                      │
+│  ┌───────────────────────────────────────────────┐              │
+│  │ Sign in to Upload                             │              │
+│  │                                               │              │
+│  │ [🔵 Continue with Google]                    │              │
+│  │                                               │              │
+│  │ Share question papers with your classmates    │              │
+│  └───────────────────────────────────────────────┘              │
 │                                                                  │
-│  If linked:                                                      │
-│  - Anonymous account merged with authenticated account           │
-│  - All uploads preserved                                         │
-│  - Cross-device sync enabled                                     │
+│  After Google OAuth:                                             │
+│  - Profile created automatically (name, avatar from Google)      │
+│  - Redirected to upload page                                     │
+│  - All uploads attributed to user profile                        │
 └─────────────────────────────────────────────────────────────────┘
+```
+
+### User Profile Flow
+
+```
+On First Login (Google OAuth):
+1. User authorizes Google
+2. Backend receives: email, name, avatar URL
+3. Create user profile:
+   - email: user@example.com
+   - displayName: "John Doe" (from Google)
+   - avatarUrl: https://lh3.googleusercontent.com/...
+4. User can edit display name anytime in settings
+
+User Profile Display:
+- Question cards show: [Avatar] DisplayName
+- Profile page shows: Avatar, DisplayName, Joined date, Upload count
+- Other users can click to view public profile
 ```
 
 ### Why This Wins for QApp
 
-1. **Zero friction to start**: Students can use immediately
-2. **Privacy by default**: No personal data required
-3. **Opt-in identity**: Users choose when to share email
-4. **Simple implementation**: Uses Supabase features we already have
-5. **Abuse prevention**: Rate limiting handles bad actors
-6. **Upgrade path**: Can add more auth methods later
+1. **Zero friction for discovery**: Anyone can browse without signup
+2. **Simple auth when needed**: One-click Google signin
+3. **Social accountability**: Real names/avatars on uploads
+4. **User attribution**: Know who contributed what
+5. **Foundation for V2**: Profiles ready for likes, follows, etc.
+6. **Spam prevention**: Real Google accounts + rate limiting
+7. **Better UX**: Social context makes content more trustworthy
 
 ---
 

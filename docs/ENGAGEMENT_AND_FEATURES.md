@@ -31,19 +31,23 @@
 This document defines the feature scope for QApp's MVP, prioritizing features that deliver core value while staying within the ~1 week development timeline. The approach is ruthlessly minimal for V1, with a clear roadmap for V2 enhancements.
 
 **MVP Scope:**
+- **Anonymous browsing** (no auth required) ✅
+- **Google OAuth** for uploads (one-click signin) ✅
 - Upload question papers with metadata ✅
 - Browse feed of uploaded papers ✅
 - Search by course code, name, level ✅
 - View question paper details ✅
+- **User profiles** (basic: avatar, display name, uploads) ✅
+- **User attribution** on question cards ✅
 
 **Deferred to V2:**
 - Likes/upvotes ❌
 - Comments ❌
-- User profiles ❌
 - Followership ❌
 - PDF support ❌
 - Download functionality ❌
 - Bookmarks/saves ❌
+- Advanced profiles (bio, stats, badges) ❌
 
 **Key Rationale**: Ship a working product that solves the core problem (finding question papers), then iterate based on user feedback.
 
@@ -238,21 +242,58 @@ const question = await db.select()
 
 ---
 
-### Nice-to-Have (If Time Permits)
+#### 5. User Profiles
 
-#### 5. User Profile (Basic)
-
-**Description**: Users can see their uploaded question papers.
+**Description**: User profiles display contributor information and their uploads.
 
 **User Story**:
-> As a contributor, I want to see all the question papers I've uploaded.
+> As a student, I want to see who uploaded a question paper and view their other contributions.
 
 **Requirements**:
-- "My Uploads" page
-- List of user's contributions
-- Delete own uploads
+- **Profile Creation**: Automatic on Google OAuth signin
+- **Profile Display**: Avatar (from Google), display name, joined date
+- **User's Uploads**: List of all questions uploaded by user
+- **Edit Display Name**: Users can update their display name
+- **Public Profiles**: Anyone can view user profiles
+- **Profile Link**: Question cards show uploader with link to profile
 
-**Time Estimate**: 0.5 day
+**Technical Implementation**:
+```typescript
+// User profile data
+interface UserProfile {
+  id: string;
+  email: string;              // Not publicly visible
+  displayName: string;        // Editable
+  avatarUrl: string | null;   // From Google OAuth
+  provider: string;           // 'google'
+  createdAt: Date;
+}
+
+// Profile query with upload count
+const profile = await db.select({
+  id: users.id,
+  displayName: users.displayName,
+  avatarUrl: users.avatarUrl,
+  createdAt: users.createdAt,
+  uploadCount: count(questions.id),
+}).from(users)
+  .leftJoin(questions, eq(questions.authorId, users.id))
+  .where(eq(users.id, userId))
+  .groupBy(users.id);
+```
+
+**UI Components Needed**:
+- User avatar component (with fallback to initials)
+- Profile header (avatar, name, stats)
+- Edit display name modal/form
+- User's uploads list (reuse question card)
+- Profile link on question cards
+
+**Time Estimate**: 1-1.5 days
+
+---
+
+### Nice-to-Have (If Time Permits)
 
 ---
 
@@ -264,6 +305,7 @@ const question = await db.select()
 - Edit metadata (not images)
 - Delete question paper
 - Confirmation dialog
+- Only visible on own uploads
 
 **Time Estimate**: 0.5 day
 
@@ -273,15 +315,15 @@ const question = await db.select()
 
 | Feature | Reason for Deferring | V2 Priority |
 |---------|---------------------|-------------|
-| **Likes/Upvotes** | Adds complexity, not core to finding papers | High |
+| **Likes/Upvotes** | Profiles foundation ready, add next | High |
 | **Comments** | Moderation needed, scope creep | Medium |
-| **User Profiles** | Not essential for anonymous MVP | Medium |
-| **Followership** | Social features can wait | Low |
+| **Followership** | Social features can wait | Medium |
 | **PDF Upload** | Technical complexity (preview, processing) | High |
 | **Download** | Copyright/abuse concerns to address | Medium |
-| **Bookmarks/Saves** | Needs user accounts to be meaningful | Medium |
+| **Bookmarks/Saves** | Auth ready, can add easily | Medium |
 | **Notifications** | Requires email infrastructure | Low |
 | **Admin Dashboard** | Manual moderation sufficient initially | Medium |
+| **Advanced Profiles** | Bio, badges, stats | Low |
 
 ---
 
@@ -307,10 +349,11 @@ const question = await db.select()
 │  ──────                                                          │
 │  POST   /api/upload/presign     Get presigned URL for R2         │
 │                                                                  │
-│  AUTH (if needed)                                                │
-│  ────                                                            │
-│  POST   /api/auth/device        Register device token            │
-│  POST   /api/auth/link          Link account with email          │
+│  USERS / PROFILES                                                │
+│  ────────────────                                                │
+│  GET    /api/users/:id          Get user profile                 │
+│  GET    /api/users/:id/questions Get user's uploads              │
+│  PUT    /api/users/me           Update own display name          │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -406,6 +449,56 @@ GET /api/questions/search?q=programming&level=100&year=2024
 }
 ```
 
+#### GET /api/users/:id
+
+```typescript
+// Request
+GET /api/users/clx123456
+
+// Response
+{
+  "user": {
+    "id": "clx123456",
+    "displayName": "John Doe",
+    "avatarUrl": "https://lh3.googleusercontent.com/...",
+    "createdAt": "2026-01-01T10:00:00Z",
+    "uploadCount": 12
+  }
+}
+```
+
+#### GET /api/users/:id/questions
+
+```typescript
+// Request
+GET /api/users/clx123456/questions?page=1&limit=20
+
+// Response
+{
+  "data": [...],  // Array of question objects
+  "pagination": {...}
+}
+```
+
+#### PUT /api/users/me
+
+```typescript
+// Request (authenticated)
+{
+  "displayName": "Jane Smith"
+}
+
+// Response
+{
+  "user": {
+    "id": "clx123456",
+    "displayName": "Jane Smith",
+    "avatarUrl": "...",
+    "createdAt": "2026-01-01T10:00:00Z"
+  }
+}
+```
+
 ### Validation Schemas (Zod)
 
 ```typescript
@@ -432,6 +525,10 @@ export const searchQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
+
+export const updateDisplayNameSchema = z.object({
+  displayName: z.string().min(2).max(50).trim(),
+});
 ```
 
 ---
@@ -445,13 +542,13 @@ export const searchQuerySchema = z.object({
 import { pgTable, text, integer, timestamp, boolean } from 'drizzle-orm/pg-core';
 import { createId } from '@paralleldrive/cuid2';
 
-// Users table (for both anonymous and authenticated)
+// Users table (authenticated via Google OAuth)
 export const users = pgTable('users', {
-  id: text('id').primaryKey().$defaultFn(() => createId()),
-  deviceId: text('device_id').unique(),
-  email: text('email').unique(),
-  displayName: text('display_name'),
-  isAnonymous: boolean('is_anonymous').default(true).notNull(),
+  id: text('id').primaryKey(),  // Supabase auth.users.id
+  email: text('email').unique().notNull(),
+  displayName: text('display_name').notNull(),
+  avatarUrl: text('avatar_url'),
+  provider: text('provider').default('google').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -487,7 +584,10 @@ export const reports = pgTable('reports', {
 // CREATE INDEX idx_questions_level ON questions(level);
 // CREATE INDEX idx_questions_created_at ON questions(created_at DESC);
 // CREATE INDEX idx_questions_author ON questions(author_id);
+// CREATE INDEX idx_users_email ON users(email);
 ```
+
+**Note**: Users are now **required** to authenticate via Google OAuth to upload. Anonymous browsing (read-only) requires no user record.
 
 ### TypeScript Types
 
@@ -496,11 +596,19 @@ export const reports = pgTable('reports', {
 
 export interface User {
   id: string;
-  deviceId?: string;
-  email?: string;
-  displayName?: string;
-  isAnonymous: boolean;
+  email: string;
+  displayName: string;
+  avatarUrl: string | null;
+  provider: string;
   createdAt: Date;
+}
+
+export interface PublicUserProfile {
+  id: string;
+  displayName: string;
+  avatarUrl: string | null;
+  createdAt: Date;
+  uploadCount?: number;
 }
 
 export interface Question {
@@ -530,6 +638,12 @@ export interface QuestionCard {
   thumbnail: string;
   imageCount: number;
   createdAt: Date;
+  // Author information for display
+  author: {
+    id: string;
+    displayName: string;
+    avatarUrl: string | null;
+  };
 }
 
 export interface PaginatedResponse<T> {
@@ -554,11 +668,32 @@ export interface PaginatedResponse<T> {
 For MVP, simple ILIKE queries are sufficient:
 
 ```typescript
-// Simple search implementation
+// Simple search implementation with author info
 async function searchQuestions(params: SearchParams) {
   const { q, level, year, semester, page = 1, limit = 20 } = params;
   
-  let query = db.select().from(questions);
+  // Join with users to get author info
+  let query = db.select({
+    // Question fields
+    id: questions.id,
+    title: questions.title,
+    courseCode: questions.courseCode,
+    courseName: questions.courseName,
+    level: questions.level,
+    year: questions.year,
+    semester: questions.semester,
+    hashtags: questions.hashtags,
+    images: questions.images,
+    createdAt: questions.createdAt,
+    // Author fields
+    author: {
+      id: users.id,
+      displayName: users.displayName,
+      avatarUrl: users.avatarUrl,
+    },
+  })
+  .from(questions)
+  .innerJoin(users, eq(questions.authorId, users.id));
   
   const conditions = [];
   
@@ -710,18 +845,23 @@ For MVP, the core incentive is **utility**:
 ┌─────────────────────────────────────────┐
 │  QApp                        [Search]   │
 ├─────────────────────────────────────────┤
-│  [Upload Question Paper]                │
+│  [Upload Question Paper]  [User Avatar ▼]│
 ├─────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐       │
-│  │  CS101      │  │  MTH201     │       │
-│  │  Final 2024 │  │  Midterm    │       │
-│  │  [Image]    │  │  [Image]    │       │
-│  │  100L • 1st │  │  200L • 2nd │       │
-│  └─────────────┘  └─────────────┘       │
-│  ┌─────────────┐  ┌─────────────┐       │
-│  │  PHY102     │  │  ENG101     │       │
-│  │  ...        │  │  ...        │       │
-│  └─────────────┘  └─────────────┘       │
+│  ┌─────────────────────────────────┐   │
+│  │  [👤] John Doe    2 days ago    │   │
+│  │  CS101 Final Exam 2024          │   │
+│  │  ┌─────────────┐                │   │
+│  │  │  [Image]    │  100L • 1st    │   │
+│  │  └─────────────┘                │   │
+│  │  #programming #java             │   │
+│  └─────────────────────────────────┘   │
+│  ┌─────────────────────────────────┐   │
+│  │  [👤] Jane Smith  5 days ago    │   │
+│  │  MTH201 Midterm 2024            │   │
+│  │  ┌─────────────┐                │   │
+│  │  │  [Image]    │  200L • 2nd    │   │
+│  │  └─────────────┘                │   │
+│  └─────────────────────────────────┘   │
 │                                         │
 │  [Load More]                            │
 └─────────────────────────────────────────┘
@@ -803,9 +943,46 @@ For MVP, the core incentive is **utility**:
 │  📅 2024 • First Semester               │
 │  🏷️ programming, java, final            │
 │                                         │
-│  Uploaded Jan 1, 2026                   │
+│  ┌─────────────────────────────────┐   │
+│  │ Uploaded by                     │   │
+│  │ [👤 Avatar] John Doe            │   │  ← Clickable
+│  │ Jan 1, 2026                     │   │
+│  └─────────────────────────────────┘   │
 │                                         │
 │  [Share] [Report]                       │
+└─────────────────────────────────────────┘
+```
+
+#### 5. User Profile Page
+
+```
+┌─────────────────────────────────────────┐
+│  ← Profile                              │
+├─────────────────────────────────────────┤
+│       ┌─────────┐                       │
+│       │  [👤]   │                       │
+│       │ Avatar  │                       │
+│       └─────────┘                       │
+│                                         │
+│        John Doe                         │
+│        [Edit Display Name]   (if own)   │
+│                                         │
+│        Joined Jan 1, 2026               │
+│        12 question papers uploaded      │
+│                                         │
+├─────────────────────────────────────────┤
+│  Uploads                                │
+├─────────────────────────────────────────┤
+│  ┌─────────────────────────────────┐   │
+│  │  CS101 Final Exam 2024          │   │
+│  │  [Image] 100L • 1st             │   │
+│  └─────────────────────────────────┘   │
+│  ┌─────────────────────────────────┐   │
+│  │  PHY102 Midterm 2024            │   │
+│  │  [Image] 100L • 2nd             │   │
+│  └─────────────────────────────────┘   │
+│                                         │
+│  [Load More]                            │
 └─────────────────────────────────────────┘
 ```
 
@@ -824,6 +1001,8 @@ Components needed:
 - `Skeleton` - Loading states
 - `Badge` - Tags/hashtags
 - `AspectRatio` - Image containers
+- `Avatar` - User avatars with fallback to initials
+- `Separator` - Section dividers
 
 ---
 
@@ -835,60 +1014,84 @@ Components needed:
 Day 1: Project Setup & Database
 ├── Set up monorepo structure
 ├── Configure Supabase (database + auth)
+├── Set up Google OAuth in Supabase
 ├── Set up Cloudflare R2
-├── Define database schema
+├── Define database schema (users + questions)
 └── Run migrations
 
-Day 2: Backend API
-├── Implement /api/questions endpoints
-├── Implement /api/upload/presign
+Day 2: Backend API & Auth
+├── Implement Google OAuth callback handler
+├── Implement /api/questions endpoints (with auth checks)
+├── Implement /api/upload/presign (protected)
+├── Implement /api/users endpoints (profile, update)
 ├── Add authentication middleware
 ├── Add validation with Zod
 └── Test endpoints
 
-Day 3: Frontend - Core UI
+Day 3: Frontend - Auth & Core UI
 ├── Set up shadcn/ui
-├── Build QuestionCard component
+├── Build AuthProvider component
+├── Build sign-in modal/flow
+├── Build Avatar component
+├── Build QuestionCard component (with author info)
 ├── Build Feed page (home)
-├── Build Search page
 └── Add loading states
 
-Day 4: Frontend - Upload Flow
+Day 4: Frontend - User Profiles
+├── Build user profile page
+├── Build "my uploads" list
+├── Build edit display name form
+├── Build Search page
+└── Link avatars/names to profiles
+
+Day 5: Frontend - Upload Flow
 ├── Build Upload form
+├── Add "Sign in to upload" check
 ├── Implement image picker
 ├── Add client-side compression
 ├── Connect to presign API
 ├── Handle upload errors
 └── Success feedback
 
-Day 5: Frontend - Detail & Polish
+Day 6: Frontend - Detail & Polish
 ├── Build Question detail page
 ├── Image gallery/carousel
+├── Show uploader info on detail page
 ├── Responsive design fixes
 ├── Error handling
 └── Empty states
 
-Day 6: Testing & Deployment
-├── Manual testing all flows
+Day 7: Testing & Deployment
+├── Manual testing all flows (browse, auth, upload, profile)
 ├── Fix critical bugs
 ├── Deploy to Vercel
-├── Configure environment variables
+├── Configure environment variables (Supabase, R2, Google OAuth)
 ├── DNS setup (if custom domain)
 └── Smoke test production
-
-Day 7: Buffer / Nice-to-Haves
-├── My Uploads page (if time)
-├── Edit/Delete functionality (if time)
-├── Performance optimizations
-└── Documentation
 ```
 
 ### Success Criteria for MVP Launch
 
-- [ ] User can upload a question paper with images
-- [ ] User can see feed of question papers
-- [ ] User can search by course code or name
-- [ ] User can view question paper details with all images
+**Anonymous Users (No Auth):**
+- [ ] Can browse question feed
+- [ ] Can search by course code/name/level
+- [ ] Can view question paper details with all images
+- [ ] Can view user profiles (public)
+
+**Authenticated Users (Google OAuth):**
+- [ ] Can sign in with Google (one click)
+- [ ] Profile automatically created with Google data
+- [ ] Can upload question papers with images
+- [ ] Can edit their display name
+- [ ] Can view their own uploads on profile
+- [ ] Can delete their own uploads
+
+**User Attribution:**
+- [ ] Question cards show uploader avatar + name
+- [ ] Clicking uploader navigates to their profile
+- [ ] Profile page shows user's uploads
+
+**General:**
 - [ ] App works on mobile and desktop
 - [ ] App is deployed and accessible
 
