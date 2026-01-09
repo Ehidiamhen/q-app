@@ -102,7 +102,7 @@ interface QuestionPaperUpload {
   courseName: string;      // e.g., "Introduction to Programming"
   level: number;           // 100, 200, 300, 400, 500
   year: number;            // 2024
-  semester: string;        // "First" | "Second" | "Summer"
+  semester: string;        // "First" | "Second" | "LVS"
   hashtags?: string[];     // ["programming", "java"]
   images: File[];          // 1-10 images
 }
@@ -511,16 +511,16 @@ export const createQuestionSchema = z.object({
   courseName: z.string().min(3).max(100),
   level: z.number().int().min(100).max(900).multipleOf(100),
   year: z.number().int().min(2000).max(2100),
-  semester: z.enum(['First', 'Second', 'Summer']),
+  semester: z.enum(['First', 'Second', 'LVS']),
   hashtags: z.array(z.string().max(30)).max(10).optional(),
-  images: z.array(z.string().url()).min(1).max(10),
+  images: z.array(z.url()).min(1).max(10),
 });
 
 export const searchQuerySchema = z.object({
   q: z.string().max(100).optional(),
   level: z.coerce.number().int().optional(),
   year: z.coerce.number().int().optional(),
-  semester: z.enum(['First', 'Second', 'Summer']).optional(),
+  semester: z.enum(['First', 'Second', 'LVS']).optional(),
   hashtag: z.string().max(30).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(50).default(20),
@@ -618,7 +618,7 @@ export interface Question {
   courseName: string;
   level: number;
   year: number;
-  semester: 'First' | 'Second' | 'Summer';
+  semester: 'First' | 'Second' | 'LVS';
   hashtags: string[];
   images: string[];
   authorId: string;
