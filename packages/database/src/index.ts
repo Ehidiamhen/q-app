@@ -6,7 +6,7 @@
 
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import * as schema from './schema/index.js';
+import * as schema from './schema/index';
 
 /**
  * Database connection URL from environment
@@ -36,5 +36,5 @@ export const db = drizzle(client, { schema });
 /**
  * Export all schemas and types
  */
-export * from './schema/index.js';
+export * from './schema/index';
 

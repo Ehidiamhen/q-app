@@ -9,11 +9,13 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@paralleldrive/cuid2": "^2.2.2",
     "@qapp/database": "workspace:*",
     "@qapp/shared": "workspace:*",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.89.0",
     "@tanstack/react-query": "^5.62.12",
+    "drizzle-orm": "^0.45.1",
     "next": "16.1.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",

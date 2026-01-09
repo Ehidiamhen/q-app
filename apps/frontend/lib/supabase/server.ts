@@ -8,6 +8,7 @@
 
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
+import { AuthenticationError } from '@/lib/api/errors';
 
 /**
  * Server-side Supabase client
@@ -71,7 +72,7 @@ export async function requireAuth() {
     const session = await getSession();
 
     if (!session) {
-        throw new Error('Authentication required');
+        throw new AuthenticationError('Authentication required');
     }
 
     return {
