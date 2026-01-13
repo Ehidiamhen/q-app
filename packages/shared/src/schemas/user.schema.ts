@@ -4,7 +4,7 @@
  */
 
 import { z } from 'zod';
-import { USER_LIMITS } from '../constants/index.js';
+import { USER_LIMITS } from '../constants/index';
 
 /**
  * Update display name schema
