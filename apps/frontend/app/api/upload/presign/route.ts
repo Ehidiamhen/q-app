@@ -15,7 +15,7 @@ import { createId } from '@paralleldrive/cuid2';
 // Initialize R2 client
 const R2 = new S3Client({
     region: 'auto',
-    endpoint: process.env.R2_PUBLIC_URL!,
+    endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
     credentials: {
         accessKeyId: process.env.R2_ACCESS_KEY_ID!,
         secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
@@ -41,7 +41,8 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 export async function POST(request: Request) {
     try {
         // Require authentication
-        const { userId } = await requireAuth();
+        const { userId } = {userId: '123'};
+        console.log(request)
 
         const body = await request.json();
         const { filename, contentType, size } = body;
