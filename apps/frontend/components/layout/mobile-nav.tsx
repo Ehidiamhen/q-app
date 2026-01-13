@@ -47,15 +47,17 @@ export function MobileNav() {
                     const Icon = item.icon;
 
                     // For profile, use user's actual profile link if authenticated
-                    const href =
+                    const href: string =
                         item.href === '/profile' && user
                             ? `/users/${user.id}`
-                            : item.href;
+                            : item.href === '/profile'
+                                ? '/upload'
+                                : item.href;
 
                     return (
                         <Link
                             key={item.href}
-                            href={href}
+                            href={href as any}
                             className={cn(
                                 'flex flex-col items-center justify-center gap-1 flex-1 h-full transition-colors',
                                 isActive

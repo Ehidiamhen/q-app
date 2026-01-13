@@ -92,15 +92,17 @@ export function DesktopSidebar() {
                     const Icon = item.icon;
 
                     // For profile, use user's actual profile link if authenticated
-                    const href =
+                    const href: string =
                         item.href === '/profile' && user
                             ? `/users/${user.id}`
-                            : item.href;
+                            : item.href === '/profile'
+                                ? '/upload'
+                                : item.href;
 
                     return (
                         <Link
                             key={item.href}
-                            href={href}
+                            href={href as any}
                             className={cn(
                                 'flex items-center gap-3 px-3 py-2 rounded-md transition-colors',
                                 isActive
@@ -110,7 +112,7 @@ export function DesktopSidebar() {
                             )}
                             title={isCollapsed ? item.label : undefined}
                         >
-                            <Icon className="h-5 w-5 flex-shrink-0" />
+                            <Icon className="h-5 w-5 shrink-0" />
                             {!isCollapsed && (
                                 <span className="font-medium">{item.label}</span>
                             )}
