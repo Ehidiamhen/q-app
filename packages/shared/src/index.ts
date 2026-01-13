@@ -4,14 +4,14 @@
  */
 
 // Constants
-export * from './constants/index.js';
+export * from './constants/index';
 
 // Types
-export * from './types/api.types.js';
-export * from './types/user.types.js';
-export * from './types/question.types.js';
+export * from './types/api.types';
+export * from './types/user.types';
+export * from './types/question.types';
 
 // Schemas
-export * from './schemas/question.schema.js';
-export * from './schemas/user.schema.js';
+export * from './schemas/question.schema';
+export * from './schemas/user.schema';
 

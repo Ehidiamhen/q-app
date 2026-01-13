@@ -5,7 +5,7 @@
  */
 
 import { z } from 'zod';
-import { QUESTION_LIMITS, SEMESTERS } from '../constants/index.js';
+import { QUESTION_LIMITS, SEMESTERS } from '../constants/index';
 
 /**
  * Create question schema

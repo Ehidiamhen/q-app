@@ -18,8 +18,13 @@
         "name": "next"
       }
     ],
+    "baseUrl": ".",
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@qapp/database": ["../../packages/database/src"],
+      "@qapp/database/*": ["../../packages/database/src/*"],
+      "@qapp/shared": ["../../packages/shared/src"],
+      "@qapp/shared/*": ["../../packages/shared/src/*"]
     }
   },
   "include": [
