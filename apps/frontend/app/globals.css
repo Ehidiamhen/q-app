@@ -1,21 +1,108 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  
+  /* Primary colors - your brand blue #034cb5 */
+  --primary: #034cb5;
+  --primary-foreground: #ffffff;
+  
+  /* Secondary colors - light blue with better contrast */
+  --secondary: #dbeafe;
+  --secondary-foreground: #1e40af;
+  
+  /* Muted colors - for subtle backgrounds with more presence */
+  --muted: #f1f5f9;
+  --muted-foreground: #475569;
+  
+  /* Accent colors - slightly lighter blue for hover states */
+  --accent: #3b82f6;
+  --accent-foreground: #ffffff;
+  
+  /* Destructive colors */
+  --destructive: #ef4444;
+  --destructive-foreground: #fafafa;
+  
+  /* Border and input - more visible borders, subtle input bg */
+  --border: #cbd5e1;
+  --input: #f1f5f9;
+  --ring: #034cb5;
+  
+  /* Card colors */
+  --card: #ffffff;
+  --card-foreground: #09090b;
+  
+  /* Popover colors */
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  
+  /* Radius */
+  --radius: 0.5rem;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    /* Dark mode - your custom dark blue background #182139 */
+    --background: #182139;
+    --foreground: #f8fafc;
+    
+    /* Dark mode primary - lighter blue for visibility */
+    --primary: #3b82f6;
+    --primary-foreground: #ffffff;
+    
+    /* Secondary - darker blue shade */
+    --secondary: #1e293b;
+    --secondary-foreground: #f8fafc;
+    
+    /* Muted - subtle elements */
+    --muted: #1e293b;
+    --muted-foreground: #94a3b8;
+    
+    /* Accent - your brand blue for important actions */
+    --accent: #034cb5;
+    --accent-foreground: #ffffff;
+    
+    /* Destructive - error states */
+    --destructive: #ef4444;
+    --destructive-foreground: #ffffff;
+    
+    /* Border and input - slightly lighter than background */
+    --border: #1e293b;
+    --input: #6b7079;
+    --ring: #3b82f6;
+    
+    /* Card - slightly lighter than background for depth */
+    --card: #1e293b;
+    --card-foreground: #f8fafc;
+    
+    /* Popover */
+    --popover: #1e293b;
+    --popover-foreground: #f8fafc;
   }
 }
 

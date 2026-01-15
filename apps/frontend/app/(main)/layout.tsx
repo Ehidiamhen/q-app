@@ -5,7 +5,7 @@
 
 import { MobileNav } from '@/components/layout/mobile-nav';
 import { DesktopSidebar } from '@/components/layout/desktop-sidebar';
-import { UserMenu } from '@/components/auth/user-menu';
+import { AppHeader } from '@/components/layout/app-header';
 
 export default function MainLayout({
     children,
@@ -13,27 +13,19 @@ export default function MainLayout({
     children: React.ReactNode;
 }) {
     return (
-        <div className="min-h-screen flex flex-col md:flex-row">
-            {/* Desktop Sidebar */}
+        <div className="min-h-screen">
+            {/* App Header - Fixed at top for both mobile and desktop */}
+            <AppHeader />
+
+            {/* Desktop Sidebar - Fixed on left, starts below header */}
             <DesktopSidebar />
 
-            {/* Main Content */}
-            <div className="flex-1 flex flex-col md:ml-56">
-                {/* Header (Desktop only - mobile has bottom nav) */}
-                <header className="hidden md:flex h-14 items-center justify-between px-6 border-b bg-background sticky top-0 z-30">
-                    <div className="flex items-center gap-4">
-                        <h1 className="text-lg font-semibold">QApp</h1>
-                    </div>
-                    <UserMenu />
-                </header>
+            {/* Main Content - Offset by header and sidebar */}
+            <main className="pt-14 pb-20 md:pb-6 md:pl-20">
+                {children}
+            </main>
 
-                {/* Page Content */}
-                <main className="flex-1 pb-20 md:pb-0">
-                    {children}
-                </main>
-            </div>
-
-            {/* Mobile Navigation */}
+            {/* Mobile Navigation - Fixed at bottom */}
             <MobileNav />
         </div>
     );

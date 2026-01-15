@@ -41,55 +41,67 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 export async function POST(request: Request) {
     try {
         // Require authentication
-        const { userId } = {userId: '123'};
-        console.log(request)
+        const { userId } = await requireAuth();
+        // console.log(request)
 
         const body = await request.json();
-        const { filename, contentType, size } = body;
+        const { files } = body;
 
-        // Validate required fields
-        if (!filename || !contentType) {
-            throw new ValidationError('filename and contentType are required');
+        // Validate files array
+        if (!Array.isArray(files) || files.length === 0) {
+            throw new ValidationError('files array is required and must not be empty');
         }
 
-        // Validate file type
-        if (!ALLOWED_TYPES.includes(contentType)) {
-            throw new ValidationError(
-                `Invalid file type. Allowed types: ${ALLOWED_TYPES.join(', ')}`
-            );
+        if (files.length > 10) {
+            throw new ValidationError('Maximum 10 files allowed');
         }
 
-        // Validate file size if provided
-        if (size && size > MAX_FILE_SIZE) {
-            throw new ValidationError(
-                `File size exceeds maximum of ${MAX_FILE_SIZE / 1024 / 1024}MB`
-            );
-        }
+        const urls = await Promise.all(
+            files.map(async ({ filename, contentType, size }) => {
+                // Validate file type
+                if (!ALLOWED_TYPES.includes(contentType)) {
+                    throw new ValidationError(
+                        `Invalid file type. Allowed types: ${ALLOWED_TYPES.join(', ')}`
+                    );
+                }
 
-        // Generate unique key
-        const ext = filename.split('.').pop() || 'jpg';
-        const key = `questions/${userId}/${createId()}.${ext}`;
+                // Validate file size if provided
+                if (size && size > MAX_FILE_SIZE) {
+                    throw new ValidationError(
+                        `File size exceeds maximum of ${MAX_FILE_SIZE / 1024 / 1024}MB`
+                    );
+                }
 
-        // Generate presigned URL (10 minute expiry)
-        const command = new PutObjectCommand({
-            Bucket: process.env.R2_BUCKET_NAME!,
-            Key: key,
-            ContentType: contentType,
-        });
+                // Generate unique key
+                const ext = filename.split('.').pop() || 'jpg';
+                const key = `questions/${userId}/${createId()}.${ext}`;
 
-        const presignedUrl = await getSignedUrl(R2, command, {
-            expiresIn: 600, // 10 minutes
-        });
+                // Generate presigned URL (10 minute expiry)
+                const command = new PutObjectCommand({
+                    Bucket: process.env.R2_BUCKET_NAME!,
+                    Key: key,
+                    ContentType: contentType,
+                });
 
-        // Construct public URL
-        const publicUrl = `${process.env.R2_PUBLIC_URL}/${key}`;
+                const presignedUrl = await getSignedUrl(R2, command, {
+                    expiresIn: 600, // 10 minutes
+                });
+
+                // Construct public URL
+                const publicUrl = `${process.env.R2_PUBLIC_URL}/${key}`;
+
+                return {
+                    presignedUrl,
+                    key,
+                    publicUrl,
+                };
+            })
+        );
 
         return NextResponse.json({
             success: true,
             data: {
-                presignedUrl,
-                key,
-                publicUrl,
+                urls,
             },
         });
     } catch (error) {

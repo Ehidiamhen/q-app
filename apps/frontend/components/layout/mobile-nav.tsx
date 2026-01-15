@@ -7,57 +7,23 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Search, Plus, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useAuth } from '@/hooks/use-auth';
-
-const navItems = [
-    {
-        href: '/',
-        label: 'Home',
-        icon: Home,
-    },
-    {
-        href: '/search',
-        label: 'Search',
-        icon: Search,
-    },
-    {
-        href: '/upload',
-        label: 'Upload',
-        icon: Plus,
-        requiresAuth: true,
-    },
-    {
-        href: '/profile',
-        label: 'Profile',
-        icon: User,
-    },
-];
+import { navItems } from '@/lib/nav-config';
 
 export function MobileNav() {
     const pathname = usePathname();
-    const { user, isAuthenticated } = useAuth();
 
     return (
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-background border-t">
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-card shadow-[0_-1px_3px_0_rgb(0_0_0_/0.1)]">
             <div className="flex items-center justify-around h-16">
                 {navItems.map((item) => {
                     const isActive = pathname === item.href;
                     const Icon = item.icon;
 
-                    // For profile, use user's actual profile link if authenticated
-                    const href: string =
-                        item.href === '/profile' && user
-                            ? `/users/${user.id}`
-                            : item.href === '/profile'
-                                ? '/upload'
-                                : item.href;
-
                     return (
                         <Link
                             key={item.href}
-                            href={href as any}
+                            href={item.href as any}
                             className={cn(
                                 'flex flex-col items-center justify-center gap-1 flex-1 h-full transition-colors',
                                 isActive
@@ -65,7 +31,7 @@ export function MobileNav() {
                                     : 'text-muted-foreground hover:text-foreground'
                             )}
                         >
-                            <Icon className="h-5 w-5" />
+                            <Icon className="h-6 w-6" />
                             <span className="text-xs font-medium">{item.label}</span>
                         </Link>
                     );

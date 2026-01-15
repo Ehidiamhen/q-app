@@ -1,46 +1,53 @@
-/**
- * Question Feed
- * Paginated list of questions with infinite scroll
- */
-
 'use client';
 
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { QuestionCard } from './question-card';
+import { QuestionCard } from '@/components/questions/question-card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import { Loader2, FileQuestion } from 'lucide-react';
 import type { PaginatedResponse, QuestionCard as QuestionCardType } from '@qapp/shared';
-import { Card, CardHeader, CardContent, CardFooter } from '@/components/ui/card';
 
-async function fetchQuestions({ pageParam = 1 }) {
-    const res = await fetch(`/api/questions?page=${pageParam}&limit=20`);
-    if (!res.ok) throw new Error('Failed to fetch questions');
+async function fetchUserQuestions(userId: string, pageParam: number) {
+    const res = await fetch(
+        `/api/users/${userId}/questions?page=${pageParam}&limit=20`
+    );
+
+    if (!res.ok) {
+        throw new Error('Failed to fetch user questions');
+    }
+
     const data = await res.json();
+    console.log("DATA: ", data.data)
     return data.data as PaginatedResponse<QuestionCardType>;
 }
 
-export function QuestionFeed() {
+interface UserUploadsListProps {
+    userId: string;
+    displayName: string;
+}
+
+export function UserUploadsList({ userId, displayName }: UserUploadsListProps) {
     const {
         data,
         fetchNextPage,
         hasNextPage,
         isFetchingNextPage,
         isLoading,
+        isError,
         error,
     } = useInfiniteQuery({
-        queryKey: ['questions'],
-        queryFn: fetchQuestions,
-        getNextPageParam: (lastPage) => {
-            return lastPage.pagination.hasNext
-                ? lastPage.pagination.page + 1
-                : undefined;
-        },
+        queryKey: ['user-uploads', userId],
+        queryFn: ({ pageParam = 1 }) => fetchUserQuestions(userId, pageParam),
+        getNextPageParam: (lastPage) =>
+            lastPage.pagination.hasNext ? lastPage.pagination.page + 1 : undefined,
         initialPageParam: 1,
-        staleTime: 1000 * 60 * 5, // Cache for 5 minutes
+        staleTime: 1000 * 60 * 5, // 5 minutes
         gcTime: 1000 * 60 * 10, // 10 minutes cache
     });
 
+    // console.log("DATA: ", data)
+    // Loading state
     if (isLoading) {
         return (
             <div className="space-y-8 w-full mx-auto">
@@ -71,12 +78,14 @@ export function QuestionFeed() {
         );
     }
 
-    if (error) {
+    // Error state
+    if (isError) {
         return (
             <div className="text-center py-12">
-                <FileQuestion className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <p className="text-muted-foreground mb-4">Failed to load questions</p>
-                <Button variant="outline" onClick={() => window.location.reload()}>
+                <p className="text-destructive mb-4">
+                    {error.message || 'Failed to load uploads'}
+                </p>
+                <Button onClick={() => window.location.reload()} variant="outline">
                     Try Again
                 </Button>
             </div>
@@ -85,13 +94,14 @@ export function QuestionFeed() {
 
     const questions = data?.pages.flatMap((page) => page.data) ?? [];
 
+    // Empty state
     if (questions.length === 0) {
         return (
-            <div className="text-center py-12">
-                <FileQuestion className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
-                <h3 className="text-lg font-semibold mb-2">No questions yet</h3>
-                <p className="text-muted-foreground mb-4">
-                    Be the first to upload a question paper!
+            <div className="text-center py-12 text-muted-foreground">
+                <FileQuestion className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p className="text-lg font-medium">No uploads yet</p>
+                <p className="text-sm mt-1">
+                    {displayName} hasn't shared any question papers yet.
                 </p>
             </div>
         );
@@ -99,25 +109,26 @@ export function QuestionFeed() {
 
     return (
         <div className="space-y-8 w-full mx-auto">
-            <div className="flex flex-wrap gap-4 justify-center"> {/*grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 */}
+            <div className="flex flex-wrap gap-4 justify-center">
                 {questions.map((question) => (
                     <div key={question.id}>
                         <QuestionCard question={question} />
-                        {/* <Separator className="block lg:hidden bg-white/15" /> */}
                     </div>
                 ))}
             </div>
 
+            {/* Load More Button */}
             {hasNextPage && (
                 <div className="flex justify-center">
                     <Button
                         onClick={() => fetchNextPage()}
                         disabled={isFetchingNextPage}
                         variant="outline"
+                        size="lg"
                     >
                         {isFetchingNextPage ? (
                             <>
-                                <Loader2 className="h-4 w-4 animate-spin" />
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                                 Loading...
                             </>
                         ) : (
