@@ -1,0 +1,81 @@
+/**
+ * PWA Install Hook
+ * Handles beforeinstallprompt event and install logic
+ */
+
+'use client';
+
+import { useEffect, useState } from 'react';
+
+interface BeforeInstallPromptEvent extends Event {
+    prompt: () => Promise<void>;
+    userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+}
+
+export function usePWAInstall() {
+    const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+    const [isInstallable, setIsInstallable] = useState(false);
+    const [isInstalled, setIsInstalled] = useState(false);
+
+    useEffect(() => {
+        // Check if already installed
+        if (window.matchMedia('(display-mode: standalone)').matches) {
+            console.log('[PWA] Already installed, running in standalone mode');
+            setIsInstalled(true);
+            return;
+        }
+
+        console.log('[PWA] Waiting for beforeinstallprompt event...');
+
+        // Listen for beforeinstallprompt event
+        const handleBeforeInstallPrompt = (e: Event) => {
+            console.log('[PWA] beforeinstallprompt event fired! App is installable.');
+            e.preventDefault();
+            const promptEvent = e as BeforeInstallPromptEvent;
+            setInstallPrompt(promptEvent);
+            setIsInstallable(true);
+        };
+
+        // Listen for app installed event
+        const handleAppInstalled = () => {
+            console.log('[PWA] App installed successfully!');
+            setIsInstalled(true);
+            setIsInstallable(false);
+            setInstallPrompt(null);
+        };
+
+        window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+        window.addEventListener('appinstalled', handleAppInstalled);
+
+        return () => {
+            window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+            window.removeEventListener('appinstalled', handleAppInstalled);
+        };
+    }, []);
+
+    const install = async () => {
+        if (!installPrompt) return false;
+
+        try {
+            await installPrompt.prompt();
+            const { outcome } = await installPrompt.userChoice;
+
+            if (outcome === 'accepted') {
+                setIsInstalled(true);
+                setIsInstallable(false);
+                setInstallPrompt(null);
+                return true;
+            }
+            return false;
+        } catch (error) {
+            console.error('Install error:', error);
+            return false;
+        }
+    };
+
+    return {
+        isInstallable,
+        isInstalled,
+        install,
+    };
+}

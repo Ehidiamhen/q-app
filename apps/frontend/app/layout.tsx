@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
@@ -15,7 +15,20 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "QApp - All Your Question Papers in One Place",
-  description: "Discover and share past exam question papers with fellow students",
+  description: "Discover and share past exam question papers with fellow students. Access thousands of questions, study offline, and ace your exams.",
+  applicationName: "QApp",
+  keywords: ["question papers", "past papers", "exam papers", "study", "education", "university", "students"],
+  authors: [{ name: "QApp" }],
+  creator: "QApp",
+  publisher: "QApp",
+  formatDetection: {
+    telephone: false,
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "QApp",
+  },
   icons: {
     icon: [
       { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
@@ -27,6 +40,18 @@ export const metadata: Metadata = {
     ],
   },
   manifest: '/site.webmanifest',
+  metadataBase: new URL('https://www.q-app.tech'),
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  userScalable: true,
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#034cb5' },
+    { media: '(prefers-color-scheme: dark)', color: '#182139' },
+  ],
 };
 
 export default function RootLayout({
