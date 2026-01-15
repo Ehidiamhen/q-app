@@ -2,6 +2,19 @@
 
 A crowdsourced platform for students to share and discover past exam question papers.
 
+## Live App
+The app is live at [https://www.q-app.tech](https://www.q-app.tech) 
+
+### Student Information
+- Name: Ehidiamhen Eleazar Aigbiluese
+- Student ID: 241030024
+- Department: Computer Science
+- Course: SEN 201 - Introduction to Software Engineering
+
+## Documentation
+
+Detailed documentation of all features and system architecture is available in the [/docs](docs) directory.
+
 ## 🏗️ Architecture
 
 **Monorepo Structure:**
@@ -155,12 +168,12 @@ pnpm build
 ## 📝 MVP Features (Week 1)
 
 - ✅ Day 1: Project setup, database schema, auth configuration
-- 🔲 Day 2: Backend API routes + auth middleware
-- 🔲 Day 3: Frontend UI components (auth, upload, feed)
-- 🔲 Day 4: User profiles and search
-- 🔲 Day 5: Image upload to R2
-- 🔲 Day 6: Polish and testing
-- 🔲 Day 7: Deployment to Vercel
+- ✅ Day 2: Backend API routes + auth middleware
+- ✅ Day 3: Frontend UI components (auth, upload, feed)
+- ✅ Day 4: User profiles and search
+- ✅ Day 5: Image upload to R2
+- ✅ Day 6: Polish and testing
+- ✅ Day 7: Deployment to Vercel
 
 ## 🤝 Contributing
 
