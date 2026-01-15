@@ -16,9 +16,16 @@ export function usePWAUpdate() {
             return;
         }
 
+        let isFirstLoad = true;
+
         // Check for updates on load
         navigator.serviceWorker.ready.then((reg) => {
             setRegistration(reg);
+
+            // Don't show update on first load (it's not an update, it's initial install)
+            setTimeout(() => {
+                isFirstLoad = false;
+            }, 3000);
 
             // Check for updates every 60 seconds
             setInterval(() => {
@@ -27,19 +34,31 @@ export function usePWAUpdate() {
         });
 
         // Listen for controller change (new SW activated)
-        navigator.serviceWorker.addEventListener('controllerchange', () => {
-            setUpdateAvailable(true);
-        });
+        const handleControllerChange = () => {
+            // Only show update if not first load
+            if (!isFirstLoad) {
+                setUpdateAvailable(true);
+            }
+        };
 
-        // Listen for waiting SW
+        navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
+
+        // Listen for waiting SW (but only after first load)
         const checkForUpdate = async () => {
+            // Wait a bit to avoid false positive on first load
+            await new Promise(resolve => setTimeout(resolve, 3000));
             const reg = await navigator.serviceWorker.ready;
-            if (reg.waiting) {
+            // Only show if there's a waiting SW and controller exists (means it's an update, not first install)
+            if (reg.waiting && navigator.serviceWorker.controller) {
                 setUpdateAvailable(true);
             }
         };
 
         checkForUpdate();
+
+        return () => {
+            navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange);
+        };
     }, []);
 
     const applyUpdate = () => {

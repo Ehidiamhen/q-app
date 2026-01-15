@@ -19,12 +19,17 @@ export function InstallPrompt() {
     useEffect(() => {
         // Don't show if already installed or running as PWA
         if (isInstalled || isPWA()) {
+            console.log('[Install Prompt] Not showing - app already installed');
             setShowPrompt(false);
             return;
         }
 
         // Check if should show based on engagement
-        if (isInstallable && shouldShowInstallPrompt()) {
+        const shouldShow = shouldShowInstallPrompt();
+        console.log('[Install Prompt] Installable:', isInstallable, 'Should show:', shouldShow);
+        
+        if (isInstallable && shouldShow) {
+            console.log('[Install Prompt] Showing prompt in 2 seconds...');
             // Small delay for better UX
             const timer = setTimeout(() => {
                 setShowPrompt(true);
